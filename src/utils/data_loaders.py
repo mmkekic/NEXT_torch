@@ -62,7 +62,7 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
     if datatype == 'dense':
         x_vals = np.histogramdd(np.concatenate([chits['X'][:,None], chits['Y'][:,None], chits['Z'][:,None]],                                            
                                                axis =-1), bins=(binsX, binsY, binsZ), weights = np.nan_to_num(chits['Ec']))
-        return x_vals[0][None, :]
+        return x_vals[0][None, :].astype(np.float32)
     elif datatype == 'sparse':
         x_vals = np.digitize(chits['X'], binsX)
         y_vals = np.digitize(chits['Y'], binsY)
@@ -93,10 +93,10 @@ class DataGen(torch.utils.data.Dataset):
 
         if self.datatype == 'dense':
             x = get_3d_input(file, event, 'dense', self.binsX, self.binsY, self.binsZ, q=self.q, group=self.group, node=self.node, augmentation=self.augmentation)
-            return x, y, event
+            return x, float(y), int(event)
         elif self.datatype == 'sparse':
             xs, ys, zs, es = get_3d_input (file, event,  'sparse', self.binsX, self.binsY, self.binsZ, q=self.q, group=self.group, node=self.node, augmentation=self.augmentation)
-        return xs, ys, zs, es, y, event
+        return xs, ys, zs, es, float(y), int(event)
 
     def __len__(self):
         return len(self.df)
@@ -156,8 +156,23 @@ def merge(batch):
     coordins_batch = coords.long()
     return coordins_batch, features_batch, y_batch, events
 
+def merge_dense(batch):
+    labels = torch.zeros(len(batch)).long()
+    events = np.zeros(len(batch))
+    inputs = torch.zeros(len(batch), *batch[0][0].shape).float()
+    for bi, data in enumerate(batch):
+        x, y, event = data
+        inputs[bi] = torch.as_tensor(x, dtype=torch.float32)
+        labels[bi] = int(y)
+        events[bi] = event
+
+    y_batch = labels.long()
+    x_batch = inputs.float()
+    return x_batch, y_batch, events
+
+
 def collate_fn(datatype):
     if datatype=='dense':
-        return None
+        return merge_dense
     elif datatype=='sparse':
         return merge

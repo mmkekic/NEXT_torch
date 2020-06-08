@@ -23,8 +23,8 @@ def train_one_epoch(epoch_id,
             coordins_batch_MC, features_batch_MC, y_batch_clf_MC, events_batch_MC = next(clf_iter)
             x_clf_MC = coordins_batch_MC, features_batch_MC.cuda(), y_batch_clf_MC.shape[0]
         elif data_type=='dense':
-            x_batch_clf_MC, y_batch_clf_MC, events_batch_MC = next(clf_iter)
-            x_clf_MC = x_batch_clf_MC.float().cuda()
+            x_clf_MC, y_batch_clf_MC, events_batch_MC = next(clf_iter)
+            x_clf_MC = x_clf_MC.cuda()
         y_clf_MC = y_batch_clf_MC.cuda()
         out_clf_MC  = net(x_clf_MC)
         out_clf_MC = out_clf_MC.float()
@@ -56,8 +56,8 @@ def evaluate_valid(epoch_id, net, criterion, clf_loader, data_type):
                 coordins_batch_MC, features_batch_MC, y_batch_clf_MC, events_batch_MC = next(clf_iter)
                 x_clf_MC = coordins_batch_MC, features_batch_MC.cuda(), y_batch_clf_MC.shape[0]
             elif data_type=='dense':
-                x_batch_clf_MC, y_batch_clf_MC, events_batch_MC = next(clf_iter)
-                x_clf_MC = x_batch_clf_MC.float().cuda()
+                x_clf_MC, y_batch_clf_MC, events_batch_MC = next(clf_iter)
+                x_clf_MC = x_clf_MC.cuda()
             y_clf_MC = y_batch_clf_MC.cuda()
             out_clf_MC  = net(x_clf_MC)
             out_clf_MC = out_clf_MC.float()
@@ -103,7 +103,7 @@ def train(*,
                                              shuffle=False, num_workers=num_workers, collate_fn=collate_fn(data_type), drop_last=True, pin_memory=False)
         
     clf_valid_loader = torch.utils.data.DataLoader(datagen_clf_valid, sampler=sampler_clf_valid, batch_size=batch_size, 
-                                                   shuffle=False, num_workers=0, collate_fn=collate_fn(data_type), drop_last=True, pin_memory=False)
+                                                   shuffle=False, num_workers=num_workers//3, collate_fn=collate_fn(data_type), drop_last=True, pin_memory=False)
 
     for i in range(0, nb_epoch):
         t0 = time.time()

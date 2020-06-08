@@ -25,7 +25,7 @@ DataTypes = ['sparse', 'dense']
 NetTypes = ['classifier', 'dann']
 dataset = '/lustre/ific.uv.es/ml/ific020/DANN.h5'
 
-def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q):
+def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers):
     train_df  = pd.read_hdf(dataset, key='MC_train').sample(frac=1.).reset_index(drop=True)
     valid_df  = pd.read_hdf(dataset, key='MC_valid').sample(frac=1.).reset_index(drop=True)
     sig_ratio = train_df.label.sum()/len(train_df)
@@ -38,10 +38,10 @@ def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q)
     os.makedirs(model_path+'/logs')
     tu.train(net=model, data_type=data_type, criterion=criterion, optimizer=optimizer, 
              scheduler=scheduler, batch_size=batch_size, nb_epoch=n_epochs, 
-             train_df=train_df, valid_df=valid_df, q=q, num_workers=4, model_path=folder_name, augmentation=True)
+             train_df=train_df, valid_df=valid_df, q=q, num_workers=num_workers, model_path=folder_name, augmentation=False)
 
 
-def train_dann(model, data_type, lr, n_epochs, batch_size, folder_name, q):
+def train_dann(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers):
     train_df  = pd.read_hdf(dataset, key='MC_train').sample(frac=1.).reset_index(drop=True)
     valid_df  = pd.read_hdf(dataset, key='MC_valid').sample(frac=1.).reset_index(drop=True)
     data_df  = pd.read_hdf(dataset, key='data_train').sample(frac=1.).reset_index(drop=True)
@@ -55,7 +55,7 @@ def train_dann(model, data_type, lr, n_epochs, batch_size, folder_name, q):
     tud.train(net=model, data_type=data_type, criterion=criterion, optimizer=optimizer, 
              scheduler=scheduler, batch_size=batch_size, nb_epoch=n_epochs, 
              train_df=train_df, valid_df=valid_df, data_df=data_df, valid_data_df=valid_data_df,
-              q=q, num_workers=4, model_path=folder_name, augmentation=True)
+              q=q, num_workers=num_workers, model_path=folder_name, augmentation=True)
 
 # MC
 def pred_MC(model, net_type, datatype, q, num_workers, folder, format_name):
@@ -101,6 +101,8 @@ def pred_data(model, net_type, datatype, q, num_workers, folder, format_name, ru
 
 
 if __name__ == '__main__':
+    torch.backends.cudnn.enabled = True
+    torch.backends.cudnn.benchmark = True
     parser = ArgumentParser(description="parameters for models")
     parser.add_argument("-conf", dest = "confname", required=True,
                         help = "input file with parameters", metavar="FILE",
@@ -148,7 +150,7 @@ if __name__ == '__main__':
     elif action == 'train':
         if net_type == 'classifier':
             folder_name = params['train_folder']
-            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'])
+            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'])
         elif net_type == 'dann':
             folder_name = params['train_folder']
-            train_dann(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'])
+            train_dann(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'])
