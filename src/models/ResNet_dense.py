@@ -137,19 +137,19 @@ class Feature_extr(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.n_final_filters = block_inplanes[3] * block.expansion
 
-        for m in self.modules():
-            if isinstance(m, nn.Conv3d):
-                nn.init.kaiming_normal_(m.weight,
-                                        mode='fan_out',
-                                        nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm3d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-        for m in self.modules():
-            if isinstance(m, Bottleneck):
-                nn.init.constant_(m.bn3.weight, 0)
-            elif isinstance(m, BasicBlock):
-                nn.init.constant_(m.bn2.weight, 0)
+        # for m in self.modules():
+        #     if isinstance(m, nn.Conv3d):
+        #         nn.init.kaiming_normal_(m.weight,
+        #                                 mode='fan_out',
+        #                                 nonlinearity='relu')
+        #     elif isinstance(m, nn.BatchNorm3d):
+        #         nn.init.constant_(m.weight, 1)
+        #         nn.init.constant_(m.bias, 0)
+        # for m in self.modules():
+        #     if isinstance(m, Bottleneck):
+        #         nn.init.constant_(m.bn3.weight, 0)
+        #     elif isinstance(m, BasicBlock):
+        #         nn.init.constant_(m.bn2.weight, 0)
 
     def _make_layer(self, block, planes, blocks, stride=1, mom=0.1):
         downsample = None
@@ -163,7 +163,8 @@ class Feature_extr(nn.Module):
             block(in_planes=self.in_planes,
                   planes=planes,
                   stride=stride,
-                  downsample=downsample))
+                  downsample=downsample,
+                  mom=mom))
         self.in_planes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.in_planes, planes))

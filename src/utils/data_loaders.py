@@ -6,8 +6,8 @@ masked_pos = np.array([[145.0, -185.0], [-65.0, -215.0], [-165.0, -115.0], [35.0
 
 def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, augmentation):
     if augmentation:
-        minq = max(6, q-20)
-        maxq = min(30, q+20)
+        minq = max(6, q-10)
+        maxq = min(30, q+10)
         q = np.random.uniform(minq, maxq)
     with tb.open_file(file) as tab:
         chits = tab.root[group][node].read_where( '(event == {}) & (Q >= {})'.format(event, q))
@@ -19,7 +19,7 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
     # chits['Y'] += Y_oft
     # chits['Z'] += Z_oft
     if augmentation:
-        zmov=30
+        zmov = 50
         maxX, minX = max(chits['X']), min(chits['X'])
         maxY, minY = max(chits['Y']), min(chits['Y'])
         maxZ, minZ = max(chits['Z']), min(chits['Z'])
@@ -45,24 +45,34 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
             chits['X'] = 2*Xc-chits['X']
         if flip[1]:
             chits['Y'] = 2*Yc-chits['Y']
-        # if flip[2]:
-        #     chits['Z'] = 2*Zc-chits['Z']
+        if flip[2]:
+            chits['Z'] = 2*Zc-chits['Z']
 
         rot_xy = np.random.choice([True, False])
         if rot_xy:
-            chits[['Y','X']] = chits[['X', 'Y']]
-                    
-        zoomX = np.random.uniform(0.4,1.2)
-        zoomY = np.random.uniform(0.4,1.2)
-        zoomZ = np.random.uniform(0.4,2.)
-        
+            X_new = minX + chits['Y']-minY
+            Y_new = minY + chits['X']-minX
+            chits['X'] = X_new
+            chits['Y'] = Y_new
+
+        zoomX = np.random.uniform(0.8, 1.3)
+        zoomY = np.random.uniform(0.8, 1.3)
+        zoomZ = np.random.uniform(0.5, 2.)
+
         chits['X'] = minX + zoomX * (chits['X']-minX)
         chits['Y'] = minY + zoomY * (chits['Y']-minY)
         chits['Z'] = minZ + zoomZ * (chits['Z']-minZ)
+  
     if datatype == 'dense':
         x_vals = np.histogramdd(np.concatenate([chits['X'][:,None], chits['Y'][:,None], chits['Z'][:,None]],                                            
                                                axis =-1), bins=(binsX, binsY, binsZ), weights = np.nan_to_num(chits['Ec']))
-        return x_vals[0][None, :].astype(np.float32)
+        if x_vals[0].sum() ==0:
+            return x_vals[0][None, :].astype(np.float32)
+        else:
+            return (x_vals[0]/x_vals[0].sum())[None, :].astype(np.float32)
+
+
+    
     elif datatype == 'sparse':
         x_vals = np.digitize(chits['X'], binsX)
         y_vals = np.digitize(chits['Y'], binsY)

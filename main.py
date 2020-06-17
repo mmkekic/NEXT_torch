@@ -24,10 +24,22 @@ def is_valid_action(parser, arg):
 DataTypes = ['sparse', 'dense']
 NetTypes = ['classifier', 'dann']
 dataset = '/lustre/ific.uv.es/ml/ific020/DANN.h5'
+sidebands_data = '/lustre/ific.uv.es/ml/ific020/sidebands_events.csv'
 
-def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers):
+def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers, augmentation):
+    data_df_tr = pd.read_hdf(dataset, key='data_train').sample(frac=1.).reset_index(drop=True)
+    data_df_ts = pd.read_hdf(dataset, key='data_valid').sample(frac=1.).reset_index(drop=True)
+    data_df    = pd.concat([data_df_tr, data_df_ts], ignore_index=True)
+    data_df.event = data_df.event.astype(int)
+    data_df.run_number = data_df.run_number.astype(int)
+
+    selection_df = pd.read_csv(sidebands_data)
+    selection_df.event = selection_df.event.astype(int)
+    selection_df.run_number = selection_df.run_number.astype(int)
     train_df  = pd.read_hdf(dataset, key='MC_train').sample(frac=1.).reset_index(drop=True)
     valid_df  = pd.read_hdf(dataset, key='MC_valid').sample(frac=1.).reset_index(drop=True)
+    valid_df.event = valid_df.event.astype(int)
+
     sig_ratio = train_df.label.sum()/len(train_df)
     weights = torch.tensor([sig_ratio, 1.-sig_ratio],device='cuda').float()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
@@ -38,7 +50,8 @@ def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q,
     os.makedirs(model_path+'/logs')
     tu.train(net=model, data_type=data_type, criterion=criterion, optimizer=optimizer, 
              scheduler=scheduler, batch_size=batch_size, nb_epoch=n_epochs, 
-             train_df=train_df, valid_df=valid_df, q=q, num_workers=num_workers, model_path=folder_name, augmentation=False)
+             train_df=train_df, valid_df=valid_df, data_df=data_df, selection_df=selection_df,
+             q=q, num_workers=num_workers, model_path=folder_name, augmentation=augmentation)
 
 
 def train_dann(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers):
@@ -78,7 +91,7 @@ def pred_MC(model, net_type, datatype, q, num_workers, folder, format_name):
 
 def pred_data(model, net_type, datatype, q, num_workers, folder, format_name, runs=[7470, 7471, 7472, 7473]):
     df_train  = pd.read_hdf(dataset, key='data_train')
-    df_test  = pd.read_hdf(dataset, key='data_test')
+    df_test  = pd.read_hdf(dataset, key='data_valid')
     df_data_all = pd.concat([df_train, df_test], ignore_index=True)
     if net_type == 'classifier':
         predict=tu.predict
@@ -140,17 +153,18 @@ if __name__ == '__main__':
     weights = params['saved_weights']
     if weights:
         model.load_state_dict(torch.load(weights)['state_dict'])
+        print('weights loaded')
 
     if action == 'predict':
         folder = params['predict_folder']
         format_name = params['predict_name']
-        pred_MC(model, net_type, data_type, 4, folder, format_name)
-        pred_data(model, net_type, data_type, 4, folder, format_name, runs=[7470, 7471, 7472, 7473])
+        pred_MC(model, net_type, data_type, params['q_cut'], params['num_workers'], folder, format_name)
+        pred_data(model, net_type, data_type, params['q_cut'], params['num_workers'], folder, format_name, runs=[7470, 7471, 7472, 7473])
     
     elif action == 'train':
         if net_type == 'classifier':
             folder_name = params['train_folder']
-            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'])
+            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'], params['augmentation'])
         elif net_type == 'dann':
             folder_name = params['train_folder']
             train_dann(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'])
