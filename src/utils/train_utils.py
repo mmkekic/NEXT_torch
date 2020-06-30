@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from . data_loaders import DataGen, SimpleSampler, collate_fn
 from matplotlib import pyplot as plt
+import torch.nn.functional as F
 
 def save_checkpoint(state, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
@@ -90,49 +91,116 @@ def make_fig(pred_data, pred_MC, epoch_id, kind, plots_dir):
     plt.close('all')
 
 def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, data_df_above, data_type, batch_size, num_workers, q, plots_dir, mean_MC, std_MC, mean_data, std_data):
-    MC_prediction_below, MC_evs_below = predict(net,
-                                                MC_df_below,
-                                                data_type,
-                                                batch_size = batch_size,
-                                                num_workers = num_workers,
-                                                q = q,
-                                                mean = mean_MC,
-                                                std = std_MC)
-    MC_prediction_above, MC_evs_above = predict(net,
-                                                MC_df_above,
-                                                data_type,
-                                                batch_size = batch_size,
-                                                num_workers = num_workers,
-                                                q = q,
-                                                mean = mean_MC,
-                                                std = std_MC)
+    MC_prediction_below, MC_evs_below, MC_feat_below = predict_features(net,
+                                                                        MC_df_below,
+                                                                        data_type,
+                                                                        batch_size = batch_size,
+                                                                        num_workers = num_workers,
+                                                                        q = q,
+                                                                        mean = mean_MC,
+                                                                        std = std_MC)
+    MC_prediction_above, MC_evs_above, MC_feat_above = predict_features(net,
+                                                                        MC_df_above,
+                                                                        data_type,
+                                                                        batch_size = batch_size,
+                                                                        num_workers = num_workers,
+                                                                        q = q,
+                                                                        mean = mean_MC,
+                                                                        std = std_MC)
+
+    MC_prediction_below_aug, MC_evs_below_aug, MC_feat_below_aug = predict_features(net,
+                                                                                    MC_df_below,
+                                                                                    data_type,
+                                                                                    batch_size = batch_size,
+                                                                                    num_workers = num_workers,
+                                                                                    q = q,
+                                                                                    mean = mean_MC,
+                                                                                    std = std_MC,
+                                                                                    augmentation=True)
+    MC_prediction_above_aug, MC_evs_above_aug, MC_feat_above_aug = predict_features(net,
+                                                                                    MC_df_above,
+                                                                                    data_type,
+                                                                                    batch_size = batch_size,
+                                                                                    num_workers = num_workers,
+                                                                                    q = q,
+                                                                                    mean = mean_MC,
+                                                                                    std = std_MC,
+                                                                                    augmentation=True)
+    
+    data_prediction_below, data_evs_below, data_feat_below = predict_features(net,
+                                                                              data_df_below,
+                                                                              data_type,
+                                                                              batch_size = batch_size,
+                                                                              num_workers = num_workers,
+                                                                              q = q,
+                                                                              mean = mean_data,
+                                                                              std = std_data)
 
     
-    data_prediction_below, data_evs_below = predict(net,
-                                                    data_df_below,
-                                                    data_type,
-                                                    batch_size = batch_size,
-                                                    num_workers = num_workers,
-                                                    q = q,
-                                                    mean = mean_data,
-                                                    std = std_data)
-
-    
-    data_prediction_above, data_evs_above = predict(net,
-                                                    data_df_above,
-                                                    data_type,
-                                                    batch_size = batch_size,
-                                                    num_workers = num_workers,
-                                                    q = q,
-                                                    mean = mean_data,
-                                                    std = std_data)
+    data_prediction_above, data_evs_above, data_feat_above = predict_features(net,
+                                                                              data_df_above,
+                                                                              data_type,
+                                                                              batch_size = batch_size,
+                                                                              num_workers = num_workers,
+                                                                              q = q,
+                                                                              mean = mean_data,
+                                                                              std = std_data)
 
     dist_below = ks_2samp(MC_prediction_below, data_prediction_below)
     dist_above = ks_2samp(MC_prediction_above, data_prediction_above)
     print("Distribution pval  {:5d}: below:  {:.9f} above: {:.9f} ".format(epoch_id, dist_below.pvalue, dist_above.pvalue))
     make_fig(data_prediction_below, MC_prediction_below, epoch_id, 'below', plots_dir)
     make_fig(data_prediction_above, MC_prediction_above, epoch_id, 'above', plots_dir)
-    return dist_below, dist_above
+
+    data_feat_below = torch.Tensor(data_feat_below)
+    data_feat_above = torch.Tensor(data_feat_above)
+
+    MC_feat_below = torch.Tensor(MC_feat_below)
+    MC_feat_above = torch.Tensor(MC_feat_above)
+
+    MC_feat_below_aug = torch.Tensor(MC_feat_below_aug)
+    MC_feat_above_aug = torch.Tensor(MC_feat_above_aug)
+
+    MC_data_above = _sliced_wasserstein_distance(MC_feat_above,
+                                                 data_feat_above,
+                                                 num_projections=100,
+                                                 p=2,
+                                                 device='cpu')
+
+    MC_data_below = _sliced_wasserstein_distance(MC_feat_below,
+                                                 data_feat_below,
+                                                 num_projections=100,
+                                                 p=2,
+                                                 device='cpu')
+
+    MC_aug_data_above = _sliced_wasserstein_distance(MC_feat_above_aug,
+                                                 data_feat_above,
+                                                 num_projections=100,
+                                                 p=2,
+                                                 device='cpu')
+    MC_aug_data_below = _sliced_wasserstein_distance(MC_feat_below_aug,
+                                                 data_feat_below,
+                                                 num_projections=100,
+                                                 p=2,
+                                                 device='cpu')
+
+
+    MC_MC_aug_above = _sliced_wasserstein_distance(MC_feat_above_aug,
+                                                 MC_feat_above,
+                                                 num_projections=100,
+                                                 p=2,
+                                                 device='cpu')
+    MC_MC_aug_below = _sliced_wasserstein_distance(MC_feat_below_aug,
+                                                 MC_feat_below,
+                                                 num_projections=100,
+                                                 p=2,
+                                                 device='cpu')
+
+    WD = {'MC_data_above' : MC_data_above, 'MC_data_below' : MC_data_below,
+          'MC_aug_data_above' : MC_aug_data_above, 'MC_aug_data_below' : MC_aug_data_below,
+          'MC_MC_aug_above' : MC_MC_aug_above, 'MC_MC_aug_below' : MC_MC_aug_below}
+    print('WD ', WD)
+    return dist_below, dist_above, WD
 
 
 def train(*,
@@ -183,6 +251,11 @@ def train(*,
     data_df_above = selection_df[(selection_df.domain=='data') & (selection_df.sideband=='higher')]
     data_df_above = data_df_above.merge(data_df, on = ['event', 'run_number'], how='inner').reset_index(drop=True)
 
+    MC_df_above   = MC_df_above[:min(len(MC_df_above), len(data_df_above))]
+    data_df_above = data_df_above[:min(len(MC_df_above), len(data_df_above))]
+    MC_df_below   = MC_df_below[:min(len(MC_df_below), len(data_df_below))]
+    data_df_below = data_df_below[:min(len(MC_df_below), len(data_df_below))]
+
     plots_dir = f'{model_path}/distribution_plots/'
     for i in range(0, nb_epoch):
         t0 = time.time()
@@ -193,10 +266,10 @@ def train(*,
                                       clf_loader,
                                       data_type)
         evaluate_stats = evaluate_valid(i, net, criterion, clf_valid_loader, data_type)
-        dist_below, dist_above = calculate_distance(i, net, MC_df_below, MC_df_above, 
-                                                    data_df_below, data_df_above, data_type, 
-                                                    batch_size, num_workers, q, plots_dir,
-                                                    mean_MC, std_MC, mean_data, std_data)
+        dist_below, dist_above, WD = calculate_distance(i, net, MC_df_below, MC_df_above, 
+                                                        data_df_below, data_df_above, data_type, 
+                                                        batch_size, num_workers, q, plots_dir,
+                                                        mean_MC, std_MC, mean_data, std_data)
         writer.add_scalar('Loss_clf/train', train_stats[0], i)
         writer.add_scalar('Loss_clf/test', evaluate_stats[0], i)
         writer.add_scalar('Accuracy_clf/train', train_stats[1], i)
@@ -205,6 +278,8 @@ def train(*,
         writer.add_scalar('KS/above', dist_above[0], i)
         writer.add_scalar('KS/p_below', dist_below[1], i)
         writer.add_scalar('KS/p_above', dist_above[1], i)
+        for key, item in WD.items():
+            writer.add_scalar(f'Wasserstein/{key}', item, i)
 
         if evaluate_stats[0] < save_loss:
             best_loss, best_acc = evaluate_stats
@@ -252,3 +327,103 @@ def predict(
             idx+=len(y_pred)
     return prediction, evs
 
+
+def predict_features(
+        net,
+        test_df,
+        data_type,
+        batch_size = 1024,
+        num_workers = 0,
+        q = 0,
+        std = None,
+        mean = None,
+        augmentation=False):
+
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output.detach()
+        return hook
+
+    net.feature_extr.register_forward_hook(get_activation('features'))
+    net.eval()
+
+    datagen_test = DataGen(test_df, data_type, q=q, node='lowTh', mean=mean, std=std, augmentation=augmentation)
+    testloader = torch.utils.data.DataLoader(datagen_test,  batch_size=batch_size,
+                                             shuffle=False, num_workers=num_workers,
+                                             collate_fn=collate_fn(data_type), drop_last=False, pin_memory=False)
+    
+    prediction = np.zeros(len(test_df))
+    evs = np.zeros(len(test_df))
+    idx = 0
+    features = []
+    for batch in testloader:
+        activation = {}
+        with torch.autograd.no_grad():
+            if data_type=='sparse':
+                coordins_batch, features_batch, y_batch_clf, events_batch = batch
+                x_clf = coordins_batch, features_batch.cuda(), y_batch_clf.shape[0]
+            elif data_type=='dense':
+                x_batch_clf, y_batch_clf, events_batch = batch
+                x_clf = x_batch_clf.float().cuda()
+            out = nn.functional.softmax(net(x_clf).float(), dim=1)[:,1]
+            act = activation['features'].squeeze()
+            features.extend(act.cpu().detach().numpy())
+            y_pred = out.cpu().detach().numpy()
+            prediction[idx : idx+len(y_pred)] = y_pred
+            evs[idx : idx+len(y_pred)] = events_batch
+            idx+=len(y_pred)
+    return prediction, evs, features
+
+
+
+#sliced wasserstein from https://arxiv.org/abs/1804.01947
+
+def rand_projections(embedding_dim, num_samples=50):
+    """This function generates `num_samples` random samples from the latent space's unit sphere.
+        Args:
+            embedding_dim (int): embedding dimensionality
+            num_samples (int): number of random projection samples
+        Return:
+            torch.Tensor: tensor of size (num_samples, embedding_dim)
+    """
+    projections = [w / np.sqrt((w**2).sum())  # L2 normalization
+                   for w in np.random.normal(size=(num_samples, embedding_dim))]
+    projections = np.asarray(projections)
+    return torch.from_numpy(projections).type(torch.FloatTensor)
+
+
+def _sliced_wasserstein_distance(encoded_samples,
+                                 distribution_samples,
+                                 num_projections=50,
+                                 p=2,
+                                 device='cpu'):
+    """ Sliced Wasserstein Distance between encoded samples and drawn distribution samples.
+        Args:
+            encoded_samples (toch.Tensor): tensor of encoded training samples
+            distribution_samples (torch.Tensor): tensor of drawn distribution training samples
+            num_projections (int): number of projections to approximate sliced wasserstein distance
+            p (int): power of distance metric
+            device (torch.device): torch device (default 'cpu')
+        Return:
+            torch.Tensor: tensor of wasserstrain distances of size (num_projections, 1)
+    """
+    # derive latent space dimension size from random samples drawn from latent prior distribution
+    embedding_dim = distribution_samples.size(1)
+    # generate random projections in latent space
+    projections = rand_projections(embedding_dim, num_projections).to(device)
+    # calculate projections through the encoded samples
+    encoded_projections = encoded_samples.matmul(projections.transpose(0, 1))
+    # calculate projections through the prior distribution random samples
+    distribution_projections = (distribution_samples.matmul(projections.transpose(0, 1)))
+    # calculate the sliced wasserstein distance by
+    # sorting the samples per random projection and
+    # calculating the difference between the
+    # encoded samples and drawn random samples
+    # per random projection
+    wasserstein_distance = (torch.sort(encoded_projections.transpose(0, 1), dim=1)[0] -
+                            torch.sort(distribution_projections.transpose(0, 1), dim=1)[0])
+    # distance between latent space prior and encoded distributions
+    # power of 2 by default for Wasserstein-2
+    wasserstein_distance = torch.pow(wasserstein_distance, p)
+    # approximate mean wasserstein_distance for each projection
+    return wasserstein_distance.mean()
