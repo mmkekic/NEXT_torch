@@ -6,6 +6,8 @@ from src.utils import train_utils_dann as tud
 import pandas as pd
 import torch
 import torch.nn as nn
+import shutil
+
 
 def is_valid_conf_file(parser, arg):
     if not os.path.exists(arg):
@@ -25,8 +27,9 @@ DataTypes = ['sparse', 'dense']
 NetTypes = ['classifier', 'dann']
 dataset = '/lustre/ific.uv.es/ml/ific020/DANN.h5'
 sidebands_data = '/lustre/ific.uv.es/ml/ific020/sidebands_events.csv'
+norms = '/lustre/ific.uv.es/ml/ific020/norms_sidebands.csv'
 
-def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers, augmentation):
+def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers, augmentation, conf_file, normalize):
     data_df_tr = pd.read_hdf(dataset, key='data_train').sample(frac=1.).reset_index(drop=True)
     data_df_ts = pd.read_hdf(dataset, key='data_valid').sample(frac=1.).reset_index(drop=True)
     data_df    = pd.concat([data_df_tr, data_df_ts], ignore_index=True)
@@ -46,12 +49,37 @@ def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q,
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max')
     criterion = nn.CrossEntropyLoss(weights)
     model_path = folder_name
-    os.makedirs(model_path)
+    os.makedirs(model_path+'/')
+    os.makedirs(model_path+'/distribution_plots/')
     os.makedirs(model_path+'/logs')
+    if conf_file is not None:
+        shutil.copyfile(conf_file, f'{model_path}/train.conf')
+    if normalize:
+        norm = pd.read_csv(norms, index_col=False)
+        if data_type=='dense':
+            mean_MC, std_MC =  norm[norm['domain'] == 'MC_dense']['mean'].values[0], norm[norm['domain'] == 'MC_dense']['std'].values[0]
+            mean_data, std_data =  norm[norm['domain'] == 'data_dense']['mean'].values[0], norm[norm['domain'] == 'data_dense']['std'].values[0]
+        elif data_type=='sparse':
+            mean_MC, std_MC =  norm[norm['domain'] == 'MC_sparse']['mean'].values[0], norm[norm['domain'] == 'MC_sparse']['std'].values[0]
+            mean_data, std_data =  norm[norm['domain'] == 'data_sparse']['mean'].values[0], norm[norm['domain'] == 'data_sparse']['std'].values[0]
+        print(mean_MC, std_MC, mean_data, std_data)
+    else:
+        mean_MC = None
+        mean_data = None
+        std_MC = None
+        std_data = None
+    # if data_type == 'dense':
+    #     norm_series = pd.read_csv(dense_norm, header=None, index_col=False)
+    #     norm_series.set_index(0, inplace=True)
+    #     mean_MC, std_MC = norm_series.loc['mean'].values[0], norm_series.loc['std'].values[0]
+    # else:
+    #     mean, std= None, None
     tu.train(net=model, data_type=data_type, criterion=criterion, optimizer=optimizer, 
              scheduler=scheduler, batch_size=batch_size, nb_epoch=n_epochs, 
              train_df=train_df, valid_df=valid_df, data_df=data_df, selection_df=selection_df,
-             q=q, num_workers=num_workers, model_path=folder_name, augmentation=augmentation)
+             q=q, num_workers=num_workers, model_path=folder_name, augmentation=augmentation,
+             mean_MC=mean_MC, std_MC=std_MC, mean_data=mean_data, std_data=std_data
+             )
 
 
 def train_dann(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers):
@@ -78,12 +106,21 @@ def pred_MC(model, net_type, datatype, q, num_workers, folder, format_name):
         predict=tu.predict
     elif net_type=='dann':
         predict = tud.predict
+    if data_type == 'dense':
+        norm_series = pd.read_csv(dense_norm, header=None, index_col=False)
+        norm_series.set_index(0, inplace=True)
+        mean, std = norm_series.loc['mean'].values[0], norm_series.loc['std'].values[0]
+    else:
+        mean, std= None, None
+
     prd = predict(model,
                   df_test_prime,
                   datatype,
                   batch_size=1024,
                   num_workers=num_workers,
-                  q=q)
+                  q=q,
+                  mean=mean,
+                  std=std)
     prd_df = pd.DataFrame({'event':prd[1], 'predicted':prd[0].flatten()})
     df_test=df_test.merge(prd_df, on='event')
     df_test.to_csv(f'{folder}/MC_6206_prediction_{format_name}.csv', index=False)
@@ -96,7 +133,14 @@ def pred_data(model, net_type, datatype, q, num_workers, folder, format_name, ru
     if net_type == 'classifier':
         predict=tu.predict
     elif net_type=='dann':
-        predict = tud.predict
+        predict = tud.predic
+    if data_type == 'dense':
+        norm_series = pd.read_csv(dense_norm, header=None, index_col=False)
+        norm_series.set_index(0, inplace=True)
+        mean, std = norm_series.loc['mean'].values[0], norm_series.loc['std'].values[0]
+    else:
+        mean, std= None, None
+
     for run in runs:
         df_data = df_data_all[df_data_all.run_number == run]
         prd_data = predict(model,
@@ -104,7 +148,9 @@ def pred_data(model, net_type, datatype, q, num_workers, folder, format_name, ru
                            datatype,
                            batch_size = 1024,
                            num_workers = num_workers, 
-                           q=q)
+                           q=q,
+                           mean=mean,
+                           std=std)
         prd_df = pd.DataFrame({'event':prd_data[1], 'predicted':prd_data[0].flatten()})
         df_data.event= df_data.event.astype('int')
         prd_df.event = prd_df.event.astype('int')
@@ -164,7 +210,7 @@ if __name__ == '__main__':
     elif action == 'train':
         if net_type == 'classifier':
             folder_name = params['train_folder']
-            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'], params['augmentation'])
+            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'], params['augmentation'], args.confname[0], params['normalize'])
         elif net_type == 'dann':
             folder_name = params['train_folder']
             train_dann(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'])

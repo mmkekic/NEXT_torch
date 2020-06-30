@@ -27,10 +27,10 @@ class BasicBlock(nn.Module):
         super().__init__()
 
         self.conv1 = conv3x3x3(in_planes, planes, stride)
-        self.bn1 = nn.BatchNorm3d(planes, momentum=mom)
-        self.relu = nn.ReLU(inplace=True)
+        self.bn1 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
+        self.relu = nn.ReLU(inplace=False)
         self.conv2 = conv3x3x3(planes, planes)
-        self.bn2 = nn.BatchNorm3d(planes, momentum=mom)
+        self.bn2 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
         self.downsample = downsample
         self.stride = stride
 
@@ -54,18 +54,18 @@ class BasicBlock(nn.Module):
 
 
 class Bottleneck(nn.Module):
-    expansion = 4
+    expansion = 1
 
     def __init__(self, in_planes, planes, stride=1, downsample=None, mom=0.1):
         super().__init__()
 
         self.conv1 = conv1x1x1(in_planes, planes)
-        self.bn1 = nn.BatchNorm3d(planes, momentum=mom)
+        self.bn1 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
         self.conv2 = conv3x3x3(planes, planes, stride)
-        self.bn2 = nn.BatchNorm3d(planes, momentum=mom)
+        self.bn2 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
         self.conv3 = conv1x1x1(planes, planes * self.expansion)
-        self.bn3 = nn.BatchNorm3d(planes * self.expansion, momentum=mom)
-        self.relu = nn.ReLU(inplace=True)
+        self.bn3 = nn.BatchNorm3d(planes * self.expansion, eps=1e-04, momentum=mom, affine=False)
+        self.relu = nn.ReLU(inplace=False)
         self.downsample = downsample
         self.stride = stride
 
@@ -88,7 +88,6 @@ class Bottleneck(nn.Module):
 
         out += residual
         out = self.relu(out)
-
         return out
 
 
@@ -97,9 +96,9 @@ class Feature_extr(nn.Module):
                  n_initial_filters=8,
                  mom=0.1):
         super().__init__()
-        block = BasicBlock
-        layers = [1, 1, 1, 2]
-        block_inplanes = [16, 32, 64, 128]
+        block = Bottleneck
+        layers = [2, 2, 2, 2]
+        block_inplanes = [32, 64, 128, 256]
         self.in_planes = n_initial_filters
         self.conv0 = nn.Conv3d(1,
                                self.in_planes,
@@ -107,16 +106,16 @@ class Feature_extr(nn.Module):
                                stride= 1,
                                padding=0,
                                bias=False)
-        self.bn0 = nn.BatchNorm3d(self.in_planes, momentum=mom)
+        self.bn0 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
         self.conv1 = nn.Conv3d(self.in_planes,
                                self.in_planes,
                                kernel_size=(5, 5, 15),
                                stride=(2, 2, 4),
                                padding=0,
                                bias=False)
-        self.bn1 = nn.BatchNorm3d(self.in_planes, momentum=mom)
-        self.relu = nn.ReLU(inplace=True)
-        
+        self.bn1 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
+        self.relu = nn.ReLU(inplace=False)
+
         self.layer1 = self._make_layer(block, block_inplanes[0], layers[0], mom=mom)
         self.layer2 = self._make_layer(block,
                                        block_inplanes[1],
@@ -133,7 +132,7 @@ class Feature_extr(nn.Module):
                                        layers[3],
                                        stride=2, 
                                        mom=mom)
-
+        
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.n_final_filters = block_inplanes[3] * block.expansion
 
@@ -156,7 +155,7 @@ class Feature_extr(nn.Module):
         if stride != 1 or self.in_planes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv1x1x1(self.in_planes, planes * block.expansion, stride),
-                nn.BatchNorm3d(planes * block.expansion, momentum=mom))
+                nn.BatchNorm3d(planes * block.expansion, eps=1e-04, momentum=mom, affine=False))
 
         layers = []
         layers.append(
@@ -185,4 +184,3 @@ class Feature_extr(nn.Module):
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         return x
-

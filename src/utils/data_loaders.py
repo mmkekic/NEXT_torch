@@ -4,7 +4,7 @@ import tables as tb
 
 masked_pos = np.array([[145.0, -185.0], [-65.0, -215.0], [-165.0, -115.0], [35.0, -185.0], [35.0, -195.0], [-65.0, 15.0],[25.0, 85.0], [85.0, 125.0], [25.0, -15.0], [-5.0,  -55.0]]) 
 
-def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, augmentation):
+def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, augmentation, mean, std):
     if augmentation:
         minq = max(6, q-10)
         maxq = min(30, q+10)
@@ -40,24 +40,33 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
         Xc = (maxX+minX)/2
         Yc = (maxY+minY)/2
         Zc = (maxZ+minZ)/2
-        
         if flip[0]:
             chits['X'] = 2*Xc-chits['X']
         if flip[1]:
             chits['Y'] = 2*Yc-chits['Y']
-        if flip[2]:
-            chits['Z'] = 2*Zc-chits['Z']
+        # if flip[2]:
+        #     chits['Z'] = 2*Zc-chits['Z']
 
+        # rot_xy = np.random.choice([True, False])
+        # if rot_xy:
+        #     chits[['Y','X']] = chits[['X', 'Y']]
+                    
+        
         rot_xy = np.random.choice([True, False])
         if rot_xy:
+            # X_new = chits['Y']
+            # Y_new = chits['X']
             X_new = minX + chits['Y']-minY
             Y_new = minY + chits['X']-minX
             chits['X'] = X_new
             chits['Y'] = Y_new
 
-        zoomX = np.random.uniform(0.8, 1.3)
-        zoomY = np.random.uniform(0.8, 1.3)
-        zoomZ = np.random.uniform(0.5, 2.)
+        # zoomX = np.random.uniform(0.8, 1.3)
+        # zoomY = np.random.uniform(0.8, 1.3)
+        # zoomZ = np.random.uniform(0.8, 2.0)
+        zoomX = np.random.normal(loc=1.2, scale=0.4)
+        zoomY = np.random.normal(loc=1.2, scale=0.4)
+        zoomZ = np.random.normal(loc=1.2, scale=0.4)
 
         chits['X'] = minX + zoomX * (chits['X']-minX)
         chits['Y'] = minY + zoomY * (chits['Y']-minY)
@@ -69,8 +78,10 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
         if x_vals[0].sum() ==0:
             return x_vals[0][None, :].astype(np.float32)
         else:
-            return (x_vals[0]/x_vals[0].sum())[None, :].astype(np.float32)
-
+            if mean is not None:
+                return ((x_vals[0]/x_vals[0].sum())[None, :].astype(np.float32)-mean)/std
+            else:
+                return (x_vals[0]/x_vals[0].sum())[None, :].astype(np.float32)
 
     
     elif datatype == 'sparse':
@@ -81,10 +92,13 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
         mask   = (x_vals>=0) & (x_vals<len(binsX)) & (y_vals>=0) & (y_vals<len(binsY)) & (z_vals>=0) & (z_vals<len(binsZ)) & (evals>0)
         evals  = evals/sum(evals)
         mask = mask & (evals>1e-6)
-        return x_vals[mask].copy(), y_vals[mask].copy(), z_vals[mask].copy(), evals[mask].copy()
+        if mean is not None:
+            return x_vals[mask].copy(), y_vals[mask].copy(), z_vals[mask].copy(), (evals[mask].copy()-mean)/std
+        else:
+            return x_vals[mask].copy(), y_vals[mask].copy(), z_vals[mask].copy(), evals[mask].copy()
 
 class DataGen(torch.utils.data.Dataset):
-    def __init__(self, df, datatype, augmentation=False, group='CHITS', node='lowTh', q=0):
+    def __init__(self, df, datatype, augmentation=False, group='CHITS', node='lowTh', q=0, mean=None, std=None):
         self.df = df
         self.binsX = np.linspace(-200, 200,  41)
         self.binsY = np.linspace(-200, 200,  41)
@@ -94,6 +108,8 @@ class DataGen(torch.utils.data.Dataset):
         self.q     = q
         self.augmentation = augmentation
         self.datatype = datatype
+        self.mean = mean
+        self.std = std
     def __getitem__(self, idx):
         file, event = self.df.iloc[idx][['filename', 'event']]
         try:
@@ -102,10 +118,10 @@ class DataGen(torch.utils.data.Dataset):
             y = -1
 
         if self.datatype == 'dense':
-            x = get_3d_input(file, event, 'dense', self.binsX, self.binsY, self.binsZ, q=self.q, group=self.group, node=self.node, augmentation=self.augmentation)
+            x = get_3d_input(file, event, 'dense', self.binsX, self.binsY, self.binsZ, q=self.q, group=self.group, node=self.node, augmentation=self.augmentation, mean=self.mean, std=self.std)
             return x, float(y), int(event)
         elif self.datatype == 'sparse':
-            xs, ys, zs, es = get_3d_input (file, event,  'sparse', self.binsX, self.binsY, self.binsZ, q=self.q, group=self.group, node=self.node, augmentation=self.augmentation)
+            xs, ys, zs, es = get_3d_input (file, event,  'sparse', self.binsX, self.binsY, self.binsZ, q=self.q, group=self.group, node=self.node, augmentation=self.augmentation, mean=self.mean, std=self.std)
         return xs, ys, zs, es, float(y), int(event)
 
     def __len__(self):
