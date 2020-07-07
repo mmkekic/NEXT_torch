@@ -4,13 +4,13 @@ from glob import glob
 import re
 from invisible_cities.io.dst_io import load_dst, load_dsts
 def create_labels_data(list_filenames, en_range=(1.4,1.9)):
-    full_csv = pd.DataFrame(columns=['filename', 'event', 'evt_energy', 'evt_ntrks'])
+    full_csv = pd.DataFrame(columns=['filename', 'event', 'evt_energy', 'evt_ntrks', 'evt_r_max', 'evt_z_min', 'evt_z_max'])
     for filename in list_filenames:
         summary_df = load_dst(filename, 'Summary', 'Events')
         if summary_df is  None:
             print('skipping empty {}'.format(filename))
             continue
-        summary_df = summary_df[['event', 'evt_energy', 'evt_ntrks']][(summary_df.evt_energy>=en_range[0]) & (summary_df.evt_energy<=en_range[1])]
+        summary_df = summary_df[['event', 'evt_energy', 'evt_ntrks', 'evt_r_max', 'evt_z_min', 'evt_z_max']][(summary_df.evt_energy>=en_range[0]) & (summary_df.evt_energy<=en_range[1])]
         summary_df.loc[:, 'filename'] = filename
         full_csv = pd.concat([full_csv, summary_df], ignore_index=True)
     #full_csv.to_csv(csv_files_name, index=False)                                                                                                                
@@ -47,7 +47,7 @@ def create_domain_dataset(data_train, MC_train, data_valid, MC_valid):
 
 
 def main():
-    hdf_file_labs = '/lustre/ific.uv.es/ml/ific020/DANN.h5'
+    hdf_file_labs = '/lustre/ific.uv.es/ml/ific020/dataset_labels.h5'
     data_train, data_valid = create_dataset_data()
     MC_train, MC_valid = create_dataset_MC()
     

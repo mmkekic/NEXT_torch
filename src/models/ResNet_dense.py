@@ -106,14 +106,14 @@ class Feature_extr(nn.Module):
                                stride= 1,
                                padding=0,
                                bias=False)
-        self.bn0 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
+        #self.bn0 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
         self.conv1 = nn.Conv3d(self.in_planes,
                                self.in_planes,
                                kernel_size=(5, 5, 15),
                                stride=(2, 2, 4),
                                padding=0,
                                bias=False)
-        self.bn1 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
+        #self.bn1 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
         self.relu = nn.ReLU(inplace=False)
 
         self.layer1 = self._make_layer(block, block_inplanes[0], layers[0], mom=mom)
@@ -172,10 +172,10 @@ class Feature_extr(nn.Module):
 
     def forward(self, x):
         x = self.conv0(x)
-        x = self.bn0(x)
+        #x = self.bn0(x)
         x = self.relu(x)
         x = self.conv1(x)
-        x = self.bn1(x)
+        #x = self.bn1(x)
         x = self.relu(x)
         x = self.layer1(x)
         x = self.layer2(x)

@@ -96,7 +96,7 @@ class Feature_extr(torch.nn.Module):
                 filter_size = (7, 7, 15),
                 bias        = False
             )
-        self.relu1 = scn.ReLU()#scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
+        self.relu1 = scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
         self.initial_convolution2 = scn.SubmanifoldConvolution(
                 dimension   = 3,
                 nIn         = n_initial_filters,
@@ -104,7 +104,7 @@ class Feature_extr(torch.nn.Module):
                 filter_size = (7, 7, 15),
                 bias        = False
             )
-        self.relu2 = scn.ReLU()#scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
+        self.relu2 = scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
         n_filters = 2*n_initial_filters
         self.initial_downsample = scn.Convolution(
                 dimension   = 3,
@@ -115,7 +115,7 @@ class Feature_extr(torch.nn.Module):
                 bias        = False
             )
         
-        self.resnet_block = SparseResNet_noBN(3, n_filters,
+        self.resnet_block = SparseResNet(3, n_filters,
                                          [['b', n_filters   , 1, 1],
                                           ['b', 2*n_filters , 1, 2],
                                           ['b', 2*n_filters , 1, 1],

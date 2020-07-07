@@ -61,16 +61,16 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
             chits['X'] = X_new
             chits['Y'] = Y_new
 
-        # zoomX = np.random.uniform(0.8, 1.3)
-        # zoomY = np.random.uniform(0.8, 1.3)
-        # zoomZ = np.random.uniform(0.8, 2.0)
-        zoomX = np.random.normal(loc=1.2, scale=0.4)
-        zoomY = np.random.normal(loc=1.2, scale=0.4)
-        zoomZ = np.random.normal(loc=1.2, scale=0.4)
+        # zoomX = np.random.uniform(0.8, 1.5)
+        # zoomY = np.random.uniform(0.8, 1.5)
+        # zoomZ = np.random.uniform(0.8, 1.5)
+        # # zoomX = np.random.normal(loc=1.05, scale=0.1)
+        # # zoomY = np.random.normal(loc=1.05, scale=0.1)
+        # # zoomZ = np.random.normal(loc=1.05, scale=0.1)
 
-        chits['X'] = minX + zoomX * (chits['X']-minX)
-        chits['Y'] = minY + zoomY * (chits['Y']-minY)
-        chits['Z'] = minZ + zoomZ * (chits['Z']-minZ)
+        # chits['X'] = minX + zoomX * (chits['X']-minX)
+        # chits['Y'] = minY + zoomY * (chits['Y']-minY)
+        # chits['Z'] = minZ + zoomZ * (chits['Z']-minZ)
   
     if datatype == 'dense':
         x_vals = np.histogramdd(np.concatenate([chits['X'][:,None], chits['Y'][:,None], chits['Z'][:,None]],                                            

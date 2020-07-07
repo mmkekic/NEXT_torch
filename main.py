@@ -25,14 +25,17 @@ def is_valid_action(parser, arg):
         return arg
 DataTypes = ['sparse', 'dense']
 NetTypes = ['classifier', 'dann']
-dataset = '/lustre/ific.uv.es/ml/ific020/DANN.h5'
-sidebands_data = '/lustre/ific.uv.es/ml/ific020/sidebands_events.csv'
-norms = '/lustre/ific.uv.es/ml/ific020/norms_sidebands.csv'
 
-def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers, augmentation, conf_file, normalize):
+dataset = '/lustre/ific.uv.es/ml/ific020/dataset_labels.h5'
+sidebands_data = '/lustre/ific.uv.es/ml/ific020/sidebands_1trck.csv'
+norms = '/lustre/ific.uv.es/ml/ific020/norm_sidebands_above_1trck_fid.csv'
+
+def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_workers, augmentation, conf_file, normalize, one_track, fiducial):
     data_df_tr = pd.read_hdf(dataset, key='data_train').sample(frac=1.).reset_index(drop=True)
     data_df_ts = pd.read_hdf(dataset, key='data_valid').sample(frac=1.).reset_index(drop=True)
     data_df    = pd.concat([data_df_tr, data_df_ts], ignore_index=True)
+    data_df = data_df[data_df.evt_ntrks==1].reset_index(drop=True)
+    data_df = data_df[data_df.evt_r_max<190].reset_index(drop=True)
     data_df.event = data_df.event.astype(int)
     data_df.run_number = data_df.run_number.astype(int)
 
@@ -40,10 +43,17 @@ def train_classifier(model, data_type, lr, n_epochs, batch_size, folder_name, q,
     selection_df.event = selection_df.event.astype(int)
     selection_df.run_number = selection_df.run_number.astype(int)
     train_df  = pd.read_hdf(dataset, key='MC_train').sample(frac=1.).reset_index(drop=True)
+    if one_track:
+        train_df = train_df[train_df.evt_ntrks==1].reset_index(drop=True)
+    if fiducial:
+        train_df = train_df[train_df.evt_r_max<190].reset_index(drop=True)
     valid_df  = pd.read_hdf(dataset, key='MC_valid').sample(frac=1.).reset_index(drop=True)
+    valid_df = valid_df[valid_df.evt_ntrks==1].reset_index(drop=True)
+    valid_df = valid_df[valid_df.evt_r_max<190].reset_index(drop=True)
     valid_df.event = valid_df.event.astype(int)
 
     sig_ratio = train_df.label.sum()/len(train_df)
+    print(f'training data stats: length {len(train_df)}, signal ration {sig_ratio}')
     weights = torch.tensor([sig_ratio, 1.-sig_ratio],device='cuda').float()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max')
@@ -99,19 +109,22 @@ def train_dann(model, data_type, lr, n_epochs, batch_size, folder_name, q, num_w
               q=q, num_workers=num_workers, model_path=folder_name, augmentation=True)
 
 # MC
-def pred_MC(model, net_type, datatype, q, num_workers, folder, format_name):
+def pred_MC(model, net_type, datatype, q, num_workers, folder, format_name, normalize):
     df_test  = pd.read_hdf(dataset, key='MC_valid')
     df_test_prime = df_test.drop(['label'], axis=1)
     if net_type == 'classifier':
         predict=tu.predict
     elif net_type=='dann':
         predict = tud.predict
-    if data_type == 'dense':
-        norm_series = pd.read_csv(dense_norm, header=None, index_col=False)
-        norm_series.set_index(0, inplace=True)
-        mean, std = norm_series.loc['mean'].values[0], norm_series.loc['std'].values[0]
+    if normalize:
+        norm = pd.read_csv(norms, index_col=False)
+        if data_type=='dense':
+            mean, std =  norm[norm['domain'] == 'MC_dense']['mean'].values[0], norm[norm['domain'] == 'MC_dense']['std'].values[0]
+        elif data_type=='sparse':
+            mean, std =  norm[norm['domain'] == 'MC_sparse']['mean'].values[0], norm[norm['domain'] == 'MC_sparse']['std'].values[0]
     else:
-        mean, std= None, None
+        mean = None
+        std  = None
 
     prd = predict(model,
                   df_test_prime,
@@ -126,20 +139,23 @@ def pred_MC(model, net_type, datatype, q, num_workers, folder, format_name):
     df_test.to_csv(f'{folder}/MC_6206_prediction_{format_name}.csv', index=False)
     print ('MC written')
 
-def pred_data(model, net_type, datatype, q, num_workers, folder, format_name, runs=[7470, 7471, 7472, 7473]):
+def pred_data(model, net_type, datatype, q, num_workers, folder, format_name, normalize, runs=[7470, 7471, 7472, 7473]):
     df_train  = pd.read_hdf(dataset, key='data_train')
     df_test  = pd.read_hdf(dataset, key='data_valid')
     df_data_all = pd.concat([df_train, df_test], ignore_index=True)
+    if normalize:
+        norm = pd.read_csv(norms, index_col=False)
+        if data_type=='dense':
+            mean, std =  norm[norm['domain'] == 'data_dense']['mean'].values[0], norm[norm['domain'] == 'data_dense']['std'].values[0]
+        elif data_type=='sparse':
+            mean, std =  norm[norm['domain'] == 'data_sparse']['mean'].values[0], norm[norm['domain'] == 'data_sparse']['std'].values[0]
+    else:
+        mean = None
+        std  = None
     if net_type == 'classifier':
         predict=tu.predict
     elif net_type=='dann':
         predict = tud.predic
-    if data_type == 'dense':
-        norm_series = pd.read_csv(dense_norm, header=None, index_col=False)
-        norm_series.set_index(0, inplace=True)
-        mean, std = norm_series.loc['mean'].values[0], norm_series.loc['std'].values[0]
-    else:
-        mean, std= None, None
 
     for run in runs:
         df_data = df_data_all[df_data_all.run_number == run]
@@ -204,13 +220,13 @@ if __name__ == '__main__':
     if action == 'predict':
         folder = params['predict_folder']
         format_name = params['predict_name']
-        pred_MC(model, net_type, data_type, params['q_cut'], params['num_workers'], folder, format_name)
-        pred_data(model, net_type, data_type, params['q_cut'], params['num_workers'], folder, format_name, runs=[7470, 7471, 7472, 7473])
+        pred_MC(model, net_type, data_type, params['q_cut'], params['num_workers'], folder, format_name, params['normalize'])
+        pred_data(model, net_type, data_type, params['q_cut'], params['num_workers'], folder, format_name, params['normalize'], runs=[7470, 7471, 7472, 7473])
     
     elif action == 'train':
         if net_type == 'classifier':
             folder_name = params['train_folder']
-            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'], params['augmentation'], args.confname[0], params['normalize'])
+            train_classifier(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'], params['augmentation'], args.confname[0], params['normalize'], params['one_track'], params['fiducial'])
         elif net_type == 'dann':
             folder_name = params['train_folder']
             train_dann(model, data_type, params['lr'], params['n_epochs'], params['batch_size'], folder_name, params['q_cut'], params['num_workers'])
