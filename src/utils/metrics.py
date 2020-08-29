@@ -33,12 +33,16 @@ def _sliced_wasserstein_distance(encoded_samples,
     """
     # derive latent space dimension size from random samples drawn from latent prior distribution
     embedding_dim = distribution_samples.size(1)
-    # generate random projections in latent space
-    projections = rand_projections(embedding_dim, num_projections).to(device)
-    # calculate projections through the encoded samples
-    encoded_projections = encoded_samples.matmul(projections.transpose(0, 1))
-    # calculate projections through the prior distribution random samples
-    distribution_projections = (distribution_samples.matmul(projections.transpose(0, 1)))
+    if embedding_dim > 1:
+        # generate random projections in latent space
+        projections = rand_projections(embedding_dim, num_projections).to(device)
+        # calculate projections through the encoded samples
+        encoded_projections = encoded_samples.matmul(projections.transpose(0, 1))
+        # calculate projections through the prior distribution random samples
+        distribution_projections = (distribution_samples.matmul(projections.transpose(0, 1)))
+    else:
+        encoded_projections = encoded_samples
+        distribution_projections = distribution_samples
     # calculate the sliced wasserstein distance by
     # sorting the samples per random projection and
     # calculating the difference between the

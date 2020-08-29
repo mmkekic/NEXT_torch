@@ -5,6 +5,7 @@ from scipy.stats import wasserstein_distance as dist
 from scipy.stats import ks_2samp
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
+
 from . data_loaders import DataGen, SimpleSampler, collate_fn
 from . metrics import EnergyStatistic, _sliced_wasserstein_distance
 from matplotlib import pyplot as plt
@@ -15,11 +16,17 @@ def save_checkpoint(state, filename='checkpoint.pth.tar'):
 
 def train_one_epoch(epoch_id,
                     net,criterion, optimizer,
-                    clf_loader, data_type):
+                    clf_loader, data_type, num_iter=None, epoch_end=True):
+    if epoch_end:
+        clf_loader.sampler.on_epoch_end()
+
     net.train()
     epoch_loss_clf = 0
     accuracy_clf   = 0
-    datalen = len(clf_loader)
+    if num_iter is None:
+        datalen = len(clf_loader)
+    else:
+        datalen = num_iter
     loop = range(0, datalen)
     clf_iter = iter(clf_loader)
     for i in loop:
@@ -44,7 +51,6 @@ def train_one_epoch(epoch_id,
     epoch_loss_clf /= (i+1)
     accuracy_clf /= (i+1)
     print("train  {:5d}: loss_clf:  {:.9f} acc_clf: {:.9f} ".format(epoch_id, epoch_loss_clf, accuracy_clf))
-    clf_loader.sampler.on_epoch_end()
     return (epoch_loss_clf, accuracy_clf)
 
 def evaluate_valid(epoch_id, net, criterion, clf_loader, data_type):
@@ -92,7 +98,7 @@ def make_fig(pred_data, pred_MC, epoch_id, kind, plots_dir):
     plt.close('all')
 
 def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, data_df_above, data_type, batch_size, num_workers, q, plots_dir, mean_MC, std_MC, mean_data, std_data):
-    MC_prediction_below, MC_evs_below, MC_feat_below = predict_2(net,
+    MC_prediction_below, MC_evs_below, MC_feat_below = predict_features(net,
                                                                  MC_df_below,
                                                                  data_type,
                                                                  batch_size = batch_size,
@@ -100,7 +106,7 @@ def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, d
                                                                  q = q,
                                                                  mean = mean_MC,
                                                                  std = std_MC)
-    MC_prediction_above, MC_evs_above, MC_feat_above = predict_2(net,
+    MC_prediction_above, MC_evs_above, MC_feat_above = predict_features(net,
                                                                  MC_df_above,
                                                                  data_type,
                                                                  batch_size = batch_size,
@@ -109,7 +115,7 @@ def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, d
                                                                  mean = mean_MC,
                                                                  std = std_MC)
     
-    MC_prediction_below_aug, MC_evs_below_aug, MC_feat_below_aug = predict_2(net,
+    MC_prediction_below_aug, MC_evs_below_aug, MC_feat_below_aug = predict_features(net,
                                                                              MC_df_below,
                                                                              data_type,
                                                                              batch_size = batch_size,
@@ -118,7 +124,7 @@ def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, d
                                                                              mean = mean_MC,
                                                                              std = std_MC,
                                                                              augmentation=True)
-    MC_prediction_above_aug, MC_evs_above_aug, MC_feat_above_aug = predict_2(net,
+    MC_prediction_above_aug, MC_evs_above_aug, MC_feat_above_aug = predict_features(net,
                                                                              MC_df_above,
                                                                              data_type,
                                                                              batch_size = batch_size,
@@ -128,7 +134,7 @@ def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, d
                                                                              std = std_MC,
                                                                              augmentation=True)
     
-    data_prediction_below, data_evs_below, data_feat_below = predict_2(net,
+    data_prediction_below, data_evs_below, data_feat_below = predict_features(net,
                                                                        data_df_below,
                                                                        data_type,
                                                                        batch_size = batch_size,
@@ -138,7 +144,7 @@ def calculate_distance(epoch_id, net, MC_df_below, MC_df_above, data_df_below, d
                                                                        std = std_data)
     
     
-    data_prediction_above, data_evs_above, data_feat_above = predict_2(net,
+    data_prediction_above, data_evs_above, data_feat_above = predict_features(net,
                                                                        data_df_above,
                                                                        data_type,
                                                                        batch_size = batch_size,
@@ -239,6 +245,7 @@ def train(*,
           data_df,
           selection_df,
           model_path,
+          num_iter = None,
           tensorboard_dir = '/logs/',
           save_loss   = 0.5,
           num_workers = 0,
@@ -281,14 +288,18 @@ def train(*,
 
     plots_dir = f'{model_path}/distribution_plots/'
 
+    iter_per_epoch = len(clf_loader)//num_iter
+
     for i in range(0, nb_epoch):
         t0 = time.time()
-
+        epoch_end = False
+        if (i%iter_per_epoch)==0: 
+            epoch_end=True
         train_stats = train_one_epoch(i, net,
                                       criterion,
                                       optimizer,
                                       clf_loader,
-                                      data_type)
+                                      data_type, num_iter, epoch_end)
         evaluate_stats = evaluate_valid(i, net, criterion, clf_valid_loader, data_type)
         dist_below, dist_above, WD, ES = calculate_distance(i, net, MC_df_below, MC_df_above, 
                                                         data_df_below, data_df_above, data_type, 
@@ -306,7 +317,7 @@ def train(*,
             writer.add_scalar(f'Wasserstein/{key}', item, i)
 
         for key, item in ES.items():
-            writer.add_scalar(f'Energy_distance_2/{key}', item, i)
+            writer.add_scalar(f'Energy_distance_512/{key}', item, i)
 
         if evaluate_stats[0] < save_loss:
             best_loss, best_acc = evaluate_stats
@@ -340,7 +351,7 @@ def predict(
     evs = np.zeros(len(test_df))
     idx = 0
     for batch in testloader:
-        with torch.autograd.no_grad():
+         with torch.autograd.no_grad():
             if data_type=='sparse':
                 coordins_batch, features_batch, y_batch_clf, events_batch = batch
                 x_clf = coordins_batch, features_batch.cuda(), y_batch_clf.shape[0]
@@ -376,8 +387,8 @@ def predict_2(
     evs = np.zeros(len(test_df))
     idx = 0
     features = []
-    for batch in testloader:
-        with torch.autograd.no_grad():
+    with torch.autograd.no_grad():
+        for batch in testloader:
             if data_type=='sparse':
                 coordins_batch, features_batch, y_batch_clf, events_batch = batch
                 x_clf = coordins_batch, features_batch.cuda(), y_batch_clf.shape[0]

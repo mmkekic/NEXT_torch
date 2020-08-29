@@ -21,50 +21,46 @@ def conv1x1x1(in_planes, out_planes, stride=1):
 
 
 class BasicBlock(nn.Module):
+    """ Pre-activated Resnet block"""
     expansion = 1
 
     def __init__(self, in_planes, planes, stride=1, downsample=None, mom=0.1):
         super().__init__()
-
-        self.conv1 = conv3x3x3(in_planes, planes, stride)
-        self.bn1 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
+        self.bn1 = nn.BatchNorm3d(in_planes, eps=1e-05, momentum=mom, affine=False)
         self.relu = nn.ReLU(inplace=False)
+        self.conv1 = conv3x3x3(in_planes, planes, stride)
+        self.bn2 = nn.BatchNorm3d(planes, eps=1e-05, momentum=mom, affine=False)
         self.conv2 = conv3x3x3(planes, planes)
-        self.bn2 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
         self.downsample = downsample
         self.stride = stride
 
     def forward(self, x):
         residual = x
-
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.bn1(x)
         out = self.relu(out)
-
-        out = self.conv2(out)
+        out = self.conv1(out)
         out = self.bn2(out)
-
+        out = self.relu(out)
+        out = self.conv2(out)
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
-        out = self.relu(out)
-
         return out
 
 
 class Bottleneck(nn.Module):
-    expansion = 1
+    expansion = 2
 
     def __init__(self, in_planes, planes, stride=1, downsample=None, mom=0.1):
         super().__init__()
 
         self.conv1 = conv1x1x1(in_planes, planes)
-        self.bn1 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
+        self.bn1 = nn.BatchNorm3d(planes, eps=1e-05, momentum=mom, affine=False)
         self.conv2 = conv3x3x3(planes, planes, stride)
-        self.bn2 = nn.BatchNorm3d(planes, eps=1e-04, momentum=mom, affine=False)
+        self.bn2 = nn.BatchNorm3d(planes, eps=1e-05, momentum=mom, affine=False)
         self.conv3 = conv1x1x1(planes, planes * self.expansion)
-        self.bn3 = nn.BatchNorm3d(planes * self.expansion, eps=1e-04, momentum=mom, affine=False)
+        self.bn3 = nn.BatchNorm3d(planes * self.expansion, eps=1e-05, momentum=mom, affine=False)
         self.relu = nn.ReLU(inplace=False)
         self.downsample = downsample
         self.stride = stride
@@ -93,30 +89,36 @@ class Bottleneck(nn.Module):
 
 class Feature_extr(nn.Module):
     def __init__(self,
-                 n_initial_filters=8,
+                 n_initial_filters=16,
                  mom=0.1):
         super().__init__()
-        block = Bottleneck
+        block = BasicBlock#Bottleneck
         layers = [2, 2, 2, 2]
-        block_inplanes = [32, 64, 128, 256]
+        block_inplanes = [64, 128, 256, 512]
         self.in_planes = n_initial_filters
         self.conv0 = nn.Conv3d(1,
                                self.in_planes,
-                               kernel_size=(3, 3, 5),
-                               stride= 1,
-                               padding=0,
+                               kernel_size = (3, 3, 5),
+                               stride = 1,
+                               padding = (1, 1, 2),
                                bias=False)
-        #self.bn0 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
+        self.bn0 = nn.BatchNorm3d(self.in_planes, eps=1e-05, momentum=mom, affine=False)
         self.conv1 = nn.Conv3d(self.in_planes,
-                               self.in_planes,
-                               kernel_size=(5, 5, 15),
-                               stride=(2, 2, 4),
-                               padding=0,
-                               bias=False)
+                               2*self.in_planes,
+                               kernel_size = (5, 5, 15),
+                               stride = (2, 2, 4),
+                               padding = (0, 0, 0),
+                               bias = False)
+        self.in_planes = 2*self.in_planes
         #self.bn1 = nn.BatchNorm3d(self.in_planes, eps=1e-04, momentum=mom, affine=False)
         self.relu = nn.ReLU(inplace=False)
 
-        self.layer1 = self._make_layer(block, block_inplanes[0], layers[0], mom=mom)
+        self.layer1 = self._make_layer(block, 
+                                       block_inplanes[0], 
+                                       layers[0], 
+                                       stride=2,
+                                       mom=mom)
+
         self.layer2 = self._make_layer(block,
                                        block_inplanes[1],
                                        layers[1],
@@ -135,7 +137,7 @@ class Feature_extr(nn.Module):
         
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
         self.n_final_filters = block_inplanes[3] * block.expansion
-
+        self.bnf = nn.BatchNorm3d(self.n_final_filters, eps=1e-05, momentum=mom, affine=False)
         # for m in self.modules():
         #     if isinstance(m, nn.Conv3d):
         #         nn.init.kaiming_normal_(m.weight,
@@ -154,8 +156,7 @@ class Feature_extr(nn.Module):
         downsample = None
         if stride != 1 or self.in_planes != planes * block.expansion:
             downsample = nn.Sequential(
-                conv1x1x1(self.in_planes, planes * block.expansion, stride),
-                nn.BatchNorm3d(planes * block.expansion, eps=1e-04, momentum=mom, affine=False))
+                conv1x1x1(self.in_planes, planes * block.expansion, stride))
 
         layers = []
         layers.append(
@@ -172,15 +173,17 @@ class Feature_extr(nn.Module):
 
     def forward(self, x):
         x = self.conv0(x)
-        #x = self.bn0(x)
+        x = self.bn0(x)
         x = self.relu(x)
         x = self.conv1(x)
-        #x = self.bn1(x)
-        x = self.relu(x)
+        # x = self.bn1(x)
+        # x = self.relu(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+        x = self.bnf(x)
+        x = self.relu(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         return x

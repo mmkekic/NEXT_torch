@@ -4,7 +4,7 @@ import tables as tb
 
 masked_pos = np.array([[145.0, -185.0], [-65.0, -215.0], [-165.0, -115.0], [35.0, -185.0], [35.0, -195.0], [-65.0, 15.0],[25.0, 85.0], [85.0, 125.0], [25.0, -15.0], [-5.0,  -55.0]]) 
 
-def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, augmentation, mean, std):
+def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, augmentation, mean, std, zoom=True):
     if augmentation:
         minq = max(6, q-10)
         maxq = min(30, q+10)
@@ -44,8 +44,8 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
             chits['X'] = 2*Xc-chits['X']
         if flip[1]:
             chits['Y'] = 2*Yc-chits['Y']
-        # if flip[2]:
-        #     chits['Z'] = 2*Zc-chits['Z']
+        if flip[2]:
+            chits['Z'] = 2*Zc-chits['Z']
 
         # rot_xy = np.random.choice([True, False])
         # if rot_xy:
@@ -60,17 +60,17 @@ def get_3d_input(file, event, datatype, binsX, binsY, binsZ, *, group, node, q, 
             Y_new = minY + chits['X']-minX
             chits['X'] = X_new
             chits['Y'] = Y_new
-
-        # zoomX = np.random.uniform(0.8, 1.5)
-        # zoomY = np.random.uniform(0.8, 1.5)
-        # zoomZ = np.random.uniform(0.8, 1.5)
-        # # zoomX = np.random.normal(loc=1.05, scale=0.1)
-        # # zoomY = np.random.normal(loc=1.05, scale=0.1)
-        # # zoomZ = np.random.normal(loc=1.05, scale=0.1)
-
-        # chits['X'] = minX + zoomX * (chits['X']-minX)
-        # chits['Y'] = minY + zoomY * (chits['Y']-minY)
-        # chits['Z'] = minZ + zoomZ * (chits['Z']-minZ)
+        if zoom:
+            zoomX = np.random.uniform(0.8, 1.5)
+            zoomY = np.random.uniform(0.8, 1.5)
+            zoomZ = np.random.uniform(0.8, 1.5)
+            # zoomX = np.random.normal(loc=1.05, scale=0.1)
+            # zoomY = np.random.normal(loc=1.05, scale=0.1)
+            # zoomZ = np.random.normal(loc=1.05, scale=0.1)
+            
+            chits['X'] = Xc + zoomX * (chits['X']-Xc)
+            chits['Y'] = Yc + zoomY * (chits['Y']-Yc)
+            chits['Z'] = Zc + zoomZ * (chits['Z']-Zc)
   
     if datatype == 'dense':
         x_vals = np.histogramdd(np.concatenate([chits['X'][:,None], chits['Y'][:,None], chits['Z'][:,None]],                                            

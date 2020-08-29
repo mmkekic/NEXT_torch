@@ -86,44 +86,39 @@ class ReverseLayerF(Function):
 
 
 class Feature_extr(torch.nn.Module):
-    def __init__(self, spatial_size=(99, 99, 199), n_initial_filters=8, mom=0.99, ):
+    def __init__(self, spatial_size=(97, 97, 199), n_initial_filters=15, mom=0.99):
         torch.nn.Module.__init__(self)
         self.input_tensor = scn.InputLayer(dimension=3, spatial_size= (spatial_size))
         self.initial_convolution1 = scn.SubmanifoldConvolution(
                 dimension   = 3,
                 nIn         = 1,
                 nOut        = n_initial_filters,
-                filter_size = (7, 7, 15),
+                filter_size = (3, 3, 5),
                 bias        = False
             )
         self.relu1 = scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
-        self.initial_convolution2 = scn.SubmanifoldConvolution(
-                dimension   = 3,
-                nIn         = n_initial_filters,
-                nOut        = n_initial_filters,
-                filter_size = (7, 7, 15),
-                bias        = False
-            )
-        self.relu2 = scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
+        # self.initial_convolution2 = scn.SubmanifoldConvolution(
+        #         dimension   = 3,
+        #         nIn         = n_initial_filters,
+        #         nOut        = n_initial_filters,
+        #         filter_size = (7, 7, 15),
+        #         bias        = False
+        #     )
+        # self.relu2 = scn.BatchNormReLU(n_initial_filters, momentum=mom, eps=1e-5)
         n_filters = 2*n_initial_filters
         self.initial_downsample = scn.Convolution(
                 dimension   = 3,
                 nIn         = n_initial_filters,
                 nOut        = n_filters,
-                filter_size = (7, 7, 15),
+                filter_size = (5, 5, 15),
                 filter_stride = (2, 2, 4),
                 bias        = False
             )
-        
         self.resnet_block = SparseResNet(3, n_filters,
-                                         [['b', n_filters   , 1, 1],
-                                          ['b', 2*n_filters , 1, 2],
-                                          ['b', 2*n_filters , 1, 1],
-                                          ['b', 4*n_filters , 1, 2],
-                                          ['b', 4*n_filters , 1, 1],
-                                          ['b', 8*n_filters , 1, 2],
-                                          ['b', 8*n_filters , 1, 1],
-                                          ['b', 16*n_filters, 1, 2]], 
+                                         [['b', 2*n_filters , 2, 2],
+                                          ['b', 4*n_filters , 2, 2],
+                                          ['b', 8*n_filters , 2, 2],
+                                          ['b', 16*n_filters, 2, 2]], 
                                          mom = mom)
         n_filters=16*n_filters
         sz_pool_fin = 2
@@ -135,8 +130,8 @@ class Feature_extr(torch.nn.Module):
         x = self.input_tensor(x) 
         x = self.initial_convolution1(x)
         x = self.relu1(x)
-        x = self.initial_convolution2(x)
-        x = self.relu2(x)
+        # x = self.initial_convolution2(x)
+        # x = self.relu2(x)
         x = self.initial_downsample(x)
         x = self.resnet_block(x)
         x = self.pool(x)
